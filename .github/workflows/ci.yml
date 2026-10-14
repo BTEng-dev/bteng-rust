@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: fmt / clippy / test (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features
+      - run: cargo test --workspace --all-features
+
+  no_std:
+    name: core builds without std
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # DR-3: no_std is not a goal, but it is a door that closes silently the
+      # moment someone reaches for std in the core. This is the doorstop.
+      - run: cargo check -p bteng-core --lib --no-default-features
+
+  aarch64:
+    name: aarch64 (native ARM runner)
+    runs-on: ubuntu-24.04-arm
+    # A hang must fail the job, not sit until the 6 h default. The whole suite
+    # takes seconds; ten minutes is generous.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # DR-2 §3.1: aarch64 is weakly ordered where x86 is TSO. Atomics that only
+      # *look* correct compile and pass on x86 and are wrong here, so the suite
+      # runs on real ARM cores (not an emulator: qemu-user hung a thread-timing
+      # test and models neither the memory model nor the timing faithfully).
+      # Pass/fail carries over; timings from a shared runner still do not.
+      - run: cargo test --workspace
+
+  bench:
+    name: benchmark (allocation gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The harness exits non-zero if any case allocates during a tick. Shared
+      # CI runners make the latency numbers noise, but the allocation count is
+      # exact and it is the M0 criterion that must never regress.
+      - run: cargo run --release -p bteng-bench
+      # Jitter on a shared CI runner is noise, but the run still proves the
+      # scheduler holds its rate and loses no ticks under load.
+      - run: cargo run --release -p bteng-bench -- --jitter --seconds 2
+      # Adversarial shapes and soak runs. Exits non-zero on any failure, and
+      # asserts zero allocations on every tick and scheduler-step path.
+      - run: cargo run --release -p bteng-bench -- --stress
+      # The CLI is the end-to-end path: XML in, scheduled run out, trace written.
+      - run: cargo run -p bteng-cli -- validate examples/mission.xml
+      - run: cargo run -p bteng-cli -- run examples/mission.xml --virtual --seconds 2
+
+  licenses:
+    name: license gate (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # THIRD-PARTY-LICENSES.md is true on the day it is written and silently
+      # false the first time someone adds a dependency. This is what keeps it
+      # honest: anything outside the permissive allowlist in deny.toml fails
+      # here rather than at release time. Advisories are deliberately not
+      # checked — they fail on the calendar rather than on the diff.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses sources bans
+      # The out-of-workspace extension has its own lockfile and can drift
+      # independently (DR-6).
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: extensions/bteng-devices/Cargo.toml
+          command: check licenses sources bans
+
+  extension:
+    name: out-of-workspace extension (DR-6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # This crate is deliberately not a workspace member: it builds against the
+      # published API exactly as a third party would. If it ever needs something
+      # opened up inside bteng-core, DR-6 is false and this job is how we find
+      # out.
+      - run: cargo fmt --all -- --check
+        working-directory: extensions/bteng-devices
+      - run: cargo clippy --all-targets
+        working-directory: extensions/bteng-devices
+      - run: cargo test
+        working-directory: extensions/bteng-devices

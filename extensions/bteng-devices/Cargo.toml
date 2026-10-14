@@ -1,0 +1,23 @@
+[package]
+name = "bteng-devices"
+description = "Device I/O nodes for BTEng — the shape an OPC UA or ROS 2 extension takes"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+# Deliberately NOT a member of the BTEngRust workspace. This crate is built the
+# way a third party builds one — against the published API only — so that "the
+# extension surface is sufficient" is a fact the compiler checks rather than an
+# opinion. If anything here needed a change inside bteng-core, DR-6 would be
+# false and this file would not compile.
+[workspace]
+
+[dependencies]
+bteng-core = { path = "../../crates/bteng-core" }
+bteng-async = { path = "../../crates/bteng-async" }
+bteng-xml = { path = "../../crates/bteng-xml" }
+
+[lints.rust]
+missing_debug_implementations = "warn"

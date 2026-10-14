@@ -1,0 +1,7 @@
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+# aarch64 is a first-class target from commit one (DR-2): a Jetson/ARM SBC is a
+# hosted std Linux box, but its weak memory ordering is not x86's TSO, so it has
+# to be compiled and tested, not assumed.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]

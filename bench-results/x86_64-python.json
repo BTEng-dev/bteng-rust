@@ -1,0 +1,51 @@
+{
+  "engine": "python",
+  "bteng": "0.3.1",
+  "python": "3.12.3",
+  "cases": [
+    {
+      "name": "balanced d3 f3",
+      "nodes": 68,
+      "ticks": 20000,
+      "ticks_per_sec": 15430.306647232372,
+      "ns_per_tick": 64807.52605,
+      "ns_per_node": 953.0518536764706,
+      "p50_ns": 64131,
+      "p99_ns": 73378,
+      "max_ns": 273824
+    },
+    {
+      "name": "balanced d5 f3",
+      "nodes": 608,
+      "ticks": 2000,
+      "ticks_per_sec": 1760.411941464289,
+      "ns_per_tick": 568048.862,
+      "ns_per_node": 934.2908914473684,
+      "p50_ns": 568447,
+      "p99_ns": 598135,
+      "max_ns": 760219
+    },
+    {
+      "name": "mission x20",
+      "nodes": 101,
+      "ticks": 20000,
+      "ticks_per_sec": 9741.360260946883,
+      "ns_per_tick": 102655.068,
+      "ns_per_node": 1016.3868118811881,
+      "p50_ns": 102036,
+      "p99_ns": 112692,
+      "max_ns": 754988
+    },
+    {
+      "name": "mission x200",
+      "nodes": 1001,
+      "ticks": 2000,
+      "ticks_per_sec": 981.9787476270802,
+      "ns_per_tick": 1018351.978,
+      "ns_per_node": 1017.3346433566434,
+      "p50_ns": 1015813,
+      "p99_ns": 1150005,
+      "max_ns": 1477846
+    }
+  ]
+}

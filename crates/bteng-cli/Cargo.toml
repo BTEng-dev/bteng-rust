@@ -1,0 +1,23 @@
+[package]
+name = "bteng-cli"
+description = "Command-line tools for BTEng trees: validate, structure, models, run"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "bteng"
+path = "src/main.rs"
+
+[dependencies]
+bteng-core = { path = "../bteng-core" }
+bteng-sched = { path = "../bteng-sched" }
+bteng-telemetry = { path = "../bteng-telemetry" }
+bteng-xml = { path = "../bteng-xml" }
+
+[lints]
+workspace = true

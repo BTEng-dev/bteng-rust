@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/bteng-core",
+    "crates/bteng-async",
+    "crates/bteng-sched",
+    "crates/bteng-telemetry",
+    "crates/bteng-xml",
+    "crates/bteng-cli",
+    "crates/bteng-bench",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/BTEng-dev/bteng-rust"
+authors = ["BTEng-dev"]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# Kept deliberately small at workspace level. The `no_std` discipline lints live
+# on bteng-core alone (DR-3): bteng-xml is a hosted crate by design, and warning
+# it for using `std` would be noise, not signal.
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "unwind"    # DR-4: PanicPolicy is a profile choice; `abort` lives in the rt profile.
+
+# Real-time-leaning profile. Not the default (DR-4).
+[profile.rt]
+inherits = "release"
+panic = "abort"

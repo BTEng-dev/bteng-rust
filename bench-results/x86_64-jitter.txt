@@ -1,0 +1,17 @@
+BTEng-Rust scheduler jitter  [x86_64]  5s per case
+lateness = actual start - absolute deadline. p50/p99 are log2-bucketed upper bounds,
+so they over-state rather than flatter.
+
+strategy       region   asked     got  mean late   p50 late   p99 late   max late  overrun%
+Yield          root      10.0    10.0    212.5us    262.1us    524.3us    404.0us     0.00%
+Yield          fast     100.0   100.2    220.8us    262.1us    524.3us    411.0us     0.00%
+SpinTail 200us root      10.0    10.0     30.8us      256ns    262.1us    160.4us     0.00%
+SpinTail 200us fast     100.0   100.2     33.4us      8.2us    262.1us    182.0us     0.00%
+Yield @1kHz    root      10.0    10.0    190.9us    262.1us    524.3us    326.7us     0.00%
+Yield @1kHz    fast    1000.0  1000.0    185.4us    262.1us    524.3us     1.28ms     0.02%
+SpinTail @1kHz root      10.0    10.0     10.9us      256ns    524.3us    362.1us     0.00%
+SpinTail @1kHz fast    1000.0   999.6      5.8us      256ns    131.1us     2.81ms     0.04%
+
+Read this on the target you care about. A developer desktop running a browser is not
+a Jetson with the workload pinned, and neither is QEMU — under emulation only the
+correctness of the run carries over, never the timing.

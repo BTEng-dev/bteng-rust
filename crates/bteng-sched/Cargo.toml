@@ -1,0 +1,15 @@
+[package]
+name = "bteng-sched"
+description = "Multi-rate scheduler for BTEng: regions, absolute deadlines, overrun policy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+bteng-core = { path = "../bteng-core" }
+
+[lints]
+workspace = true

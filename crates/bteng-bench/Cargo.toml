@@ -1,0 +1,21 @@
+[package]
+name = "bteng-bench"
+description = "M0 benchmark harness: ticks/s, tick-latency percentiles, allocation count"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# No criterion, deliberately. This harness has to run on a Jetson and under
+# QEMU, where a large dev-dependency tree is a liability, and criterion's own
+# allocations would muddy the one number M0 exists to establish.
+[dependencies]
+bteng-core = { path = "../bteng-core" }
+bteng-sched = { path = "../bteng-sched" }
+bteng-async = { path = "../bteng-async" }
+
+[lints]
+workspace = true

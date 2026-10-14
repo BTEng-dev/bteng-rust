@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+Cargo.lock.orig
+.venv/
+__pycache__/
+*.pyc
+extensions/*/target/
+crates/*/target/
+*.so
+
+# Local assistant notes (private)
+CLAUDE.md

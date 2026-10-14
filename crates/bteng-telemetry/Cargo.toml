@@ -1,0 +1,21 @@
+[package]
+name = "bteng-telemetry"
+description = "Versioned trace schema for BTEng — the wire format BTviz reads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# No serde. The schema is small, the JSON is written by hand, and a consumer in
+# any language reads it with its own parser. Adding a derive dependency to the
+# crate that sits closest to the tick path buys nothing.
+[dependencies]
+bteng-core = { path = "../bteng-core" }
+
+[dev-dependencies]
+bteng-sched = { path = "../bteng-sched" }
+
+[lints]
+workspace = true

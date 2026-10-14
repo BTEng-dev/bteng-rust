@@ -1,0 +1,19 @@
+[package]
+name = "bteng-async"
+description = "Async leaves for BTEng: pluggable spawners, non-blocking halt, wake-on-completion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# Zero dependencies, including no async runtime. The `Spawner` trait is the
+# seam; a tokio backend is a ~30-line impl in whichever crate already depends on
+# tokio. Vendoring one here would put a 30-crate tree in front of every aarch64
+# and QEMU build for the sake of an example.
+[dependencies]
+bteng-core = { path = "../bteng-core" }
+
+[lints]
+workspace = true

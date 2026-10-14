@@ -1,0 +1,18 @@
+[package]
+name = "bteng-xml"
+description = "BehaviorTree.CPP-compatible XML front end for BTEng"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+bteng-core = { path = "../bteng-core" }
+# Pure Rust, no unsafe, no transitive dependencies — it has to build for
+# aarch64 and run under QEMU without dragging a tree of crates along.
+roxmltree = "0.21"
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+BTEng-Rust stress  [x86_64]
+Allocations are counted only in the steady-state part of each case;
+construction allocates by design.
+
+case                     detail                                      time    allocs  verdict
+deep chain d=64          65 nodes                                   0.00s         0  ok
+deep chain d=511         512 nodes                                  0.00s         0  ok
+wide 2000x4              18001 nodes                                0.00s         0  ok
+soak 1000000 ticks       145 nodes, 1000000 ticks                   2.34s         0  ok
+64 regions               65 regions, 100000 steps, 100000 ticks     0.02s         0  ok
+512 regions              513 regions, 100000 steps, 100000 ticks     0.10s         0  ok
+event storm              20000 writes over 49995 ms -> 10000 region ticks     0.00s         0  ok
+patch storm x2000        4501->501 nodes, v2000, 0 slots            0.10s by design  ok
+depth guard              refused after 510 deepening patches        0.05s by design  ok
+rollback churn x2000     2000 apply+undo cycles, 0 slots            0.01s by design  ok
+wake storm               8 threads x 50000 wakes -> generation 400000     0.11s by design  ok
+async churn x200000      200000 spawn+cancel, 200000 settled        0.01s by design  ok
+halt churn x50000        50000 tick+halt cycles                     0.04s         0  ok
+
+all 13 cases passed

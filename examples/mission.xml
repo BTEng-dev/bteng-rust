@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4" main_tree_to_execute="main">
+  <BehaviorTree ID="main">
+    <Parallel success_count="-1" failure_count="1">
+
+      <!-- Trajectory following wants a fast, steady clock of its own. -->
+      <Region hz="100" overrun="skip">
+        <Sequence name="follow">
+          <Sleep msec="5"/>
+          <AlwaysSuccess name="step_taken"/>
+        </Sequence>
+      </Region>
+
+      <!-- Replanning only matters when something changed. It sleeps otherwise,
+           but still wakes twice a second so its own timeouts can fire. -->
+      <Region hz="2" mode="on_change" min_period_ms="100">
+        <ReactiveSequence name="supervise">
+          <Inverter>
+            <AlwaysFailure name="path_blocked"/>
+          </Inverter>
+          <Timeout msec="2000">
+            <RetryUntilSuccessful num_attempts="3">
+              <AlwaysSuccess name="replan"/>
+            </RetryUntilSuccessful>
+          </Timeout>
+        </ReactiveSequence>
+      </Region>
+
+      <SubTree ID="watchdog" limit_ms="500"/>
+    </Parallel>
+  </BehaviorTree>
+
+  <BehaviorTree ID="watchdog">
+    <Timeout msec="{limit_ms}">
+      <KeepRunningUntilFailure>
+        <AlwaysSuccess name="heartbeat"/>
+      </KeepRunningUntilFailure>
+    </Timeout>
+  </BehaviorTree>
+</root>

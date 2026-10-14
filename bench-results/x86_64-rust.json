@@ -1,0 +1,11 @@
+{
+  "arch": "x86_64",
+  "cases": [
+    {"name":"balanced d3 f3","nodes":68,"walks_all":true,"ticks":200000,"ticks_per_sec":569837,"ns_per_tick":1754.9,"ns_per_node":25.81,"p50_ns":1667,"p99_ns":2723,"max_ns":225624,"allocs":0},
+    {"name":"balanced d5 f3","nodes":608,"walks_all":true,"ticks":20000,"ticks_per_sec":65959,"ns_per_tick":15161.0,"ns_per_node":24.94,"p50_ns":14921,"p99_ns":19335,"max_ns":193534,"allocs":0},
+    {"name":"mission x20","nodes":101,"walks_all":true,"ticks":200000,"ticks_per_sec":308201,"ns_per_tick":3244.6,"ns_per_node":32.13,"p50_ns":3157,"p99_ns":4233,"max_ns":228947,"allocs":0},
+    {"name":"mission x200","nodes":1001,"walks_all":true,"ticks":20000,"ticks_per_sec":36687,"ns_per_tick":27257.8,"ns_per_node":27.23,"p50_ns":27124,"p99_ns":32176,"max_ns":222190,"allocs":0},
+    {"name":"resume d32","nodes":65,"walks_all":false,"ticks":200000,"ticks_per_sec":1439427,"ns_per_tick":694.7,"ns_per_node":null,"p50_ns":665,"p99_ns":855,"max_ns":112092,"allocs":0},
+    {"name":"resume d128","nodes":257,"walks_all":false,"ticks":200000,"ticks_per_sec":394160,"ns_per_tick":2537.0,"ns_per_node":null,"p50_ns":2485,"p99_ns":3038,"max_ns":659558,"allocs":0}
+  ]
+}

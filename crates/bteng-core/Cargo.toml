@@ -1,0 +1,20 @@
+[package]
+name = "bteng-core"
+description = "Behavior tree engine core: arena tree, slot blackboard, tick loop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["std"]
+# DR-3: no_std is kept cheap, not chased. The core is alloc-first; `std` only
+# adds the wall-clock implementation. No dependency is bent for this.
+std = []
+
+[dependencies]
+
+[lints]
+workspace = true
