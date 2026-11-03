@@ -126,6 +126,7 @@ impl TraceSink for Recorder {
             node: event.node.0,
             from: event.from,
             to: event.to,
+            by: event.by,
         });
     }
 }

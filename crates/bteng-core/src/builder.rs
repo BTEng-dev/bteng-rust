@@ -12,10 +12,12 @@ use core::fmt;
 
 use crate::blackboard::Blackboard;
 use crate::builtins::{Builtin, MAX_PARALLEL_CHILDREN};
+use crate::expr::{Expr, ExprError};
 use crate::id::{NameId, NodeId, Uid};
 use crate::manifest::{Arity, NodeManifest};
 use crate::node::{Node, NodeKind};
 use crate::port::{Binding, BindingSource, PortError, PortSpec};
+use crate::precondition::{Guard, Precondition, Preconditions};
 use crate::tree::{NodeMeta, NodeStruct, TreeGraph};
 
 /// How deep a tree may nest, by default.
@@ -86,6 +88,24 @@ pub enum BuildError {
         name: String,
         port: String,
     },
+    /// A precondition did not parse, names a blackboard key that does not
+    /// exist, or does not type-check.
+    ///
+    /// An unknown key is caught here rather than on the tick that first reads
+    /// it: a typo in a key name must not quietly become "condition false".
+    Precondition {
+        node: NodeId,
+        name: String,
+        attribute: &'static str,
+        expr: String,
+        source: ExprError,
+    },
+    /// The same precondition was given twice for one node.
+    DuplicatePrecondition {
+        node: NodeId,
+        name: String,
+        attribute: &'static str,
+    },
     /// The tree nests deeper than ticking it could survive.
     ///
     /// Caught here because the alternative is a stack overflow during a tick,
@@ -134,6 +154,16 @@ impl fmt::Display for BuildError {
             BuildError::DuplicatePort { name, port, .. } => {
                 write!(f, "node {name:?}: port {port:?} given twice")
             }
+            BuildError::Precondition {
+                name,
+                attribute,
+                expr,
+                source,
+                ..
+            } => write!(f, "node {name:?}: {attribute}=\"{expr}\": {source}"),
+            BuildError::DuplicatePrecondition {
+                name, attribute, ..
+            } => write!(f, "node {name:?}: {attribute} given twice"),
             BuildError::TooDeep { depth, max } => write!(
                 f,
                 "tree nests {depth} levels deep, over the limit of {max}; ticking recurses, \
@@ -152,6 +182,15 @@ struct PortAssignment {
     value: String,
 }
 
+/// A precondition as given to the builder, before it is resolved.
+#[derive(Clone, Debug)]
+enum PendingGuard {
+    /// Text, parsed at build.
+    Text(String),
+    /// Already parsed — and possibly renamed — by a front end.
+    Expr(Expr),
+}
+
 struct Pending {
     name: NameId,
     kind: NodeKind,
@@ -159,6 +198,7 @@ struct Pending {
     children: Vec<NodeId>,
     parent: NodeId,
     assignments: Vec<PortAssignment>,
+    guards: Vec<(Precondition, PendingGuard)>,
 }
 
 impl fmt::Debug for Pending {
@@ -261,6 +301,7 @@ impl TreeBuilder {
             children: Vec::new(),
             parent,
             assignments: Vec::new(),
+            guards: Vec::new(),
         });
         match self.stack.last() {
             Some(&p) => self.nodes[p].children.push(id),
@@ -351,6 +392,43 @@ impl TreeBuilder {
         self
     }
 
+    /// Give the most recently added node a precondition, as expression text.
+    ///
+    /// Parsed, resolved against the blackboard and type-checked at
+    /// [`build`](TreeBuilder::build) time; see [`crate::Expr`] for the
+    /// language. A bare name is a blackboard key, and the key has to exist by
+    /// then — declared on the blackboard, or bound to some node's port.
+    ///
+    /// ```
+    /// use bteng_core::{Blackboard, Builtin, Precondition, TreeBuilder};
+    ///
+    /// let mut bb = Blackboard::new();
+    /// bb.declare("battery", 15i32).unwrap();
+    /// let tree = TreeBuilder::new()
+    ///     .begin("root", Builtin::sequence())
+    ///         .leaf("work", Builtin::AlwaysSuccess)
+    ///         .precondition(Precondition::SkipIf, "battery < 20")
+    ///     .end()
+    ///     .build(&mut bb);
+    /// assert!(tree.is_ok());
+    /// ```
+    pub fn precondition(&mut self, kind: Precondition, expr: &str) -> &mut Self {
+        self.push_guard(kind, PendingGuard::Text(expr.to_string()))
+    }
+
+    /// As [`precondition`](TreeBuilder::precondition), with an expression a
+    /// front end has already parsed (and perhaps renamed).
+    pub fn precondition_expr(&mut self, kind: Precondition, expr: Expr) -> &mut Self {
+        self.push_guard(kind, PendingGuard::Expr(expr))
+    }
+
+    fn push_guard(&mut self, kind: Precondition, guard: PendingGuard) -> &mut Self {
+        if let Some(i) = self.last {
+            self.nodes[i].guards.push((kind, guard));
+        }
+        self
+    }
+
     /// Close the innermost open scope.
     pub fn end(&mut self) -> &mut Self {
         if let Some(i) = self.stack.pop() {
@@ -432,6 +510,15 @@ impl TreeBuilder {
             all_bindings.push(bind_ports(NodeId(i as u32), p, &name, bb)?);
         }
 
+        // ── preconditions ────────────────────────────────────────────────────
+        // After the ports, so a key that only a port creates is already there
+        // for an expression to resolve.
+        let mut all_guards: Vec<Option<Box<Preconditions>>> = Vec::with_capacity(pending.len());
+        for (i, p) in pending.iter().enumerate() {
+            let name = names[p.name.index()].to_string();
+            all_guards.push(compile_guards(NodeId(i as u32), p, &name, bb)?);
+        }
+
         // ── flatten ──────────────────────────────────────────────────────────
         let total_children: usize = pending.iter().map(|p| p.children.len()).sum();
         let total_ports: usize = all_bindings.iter().map(Vec::len).sum();
@@ -469,9 +556,51 @@ impl TreeBuilder {
         }
 
         Ok(TreeGraph::from_parts(
-            structure, meta, children, ports, behavior, names,
+            structure, meta, children, ports, behavior, all_guards, names,
         ))
     }
+}
+
+/// Resolve one node's preconditions. `None` when it has none.
+fn compile_guards(
+    id: NodeId,
+    p: &Pending,
+    name: &str,
+    bb: &Blackboard,
+) -> Result<Option<Box<Preconditions>>, BuildError> {
+    if p.guards.is_empty() {
+        return Ok(None);
+    }
+    let mut out = Preconditions::default();
+    for (i, (kind, guard)) in p.guards.iter().enumerate() {
+        if p.guards[..i].iter().any(|(k, _)| k == kind) {
+            return Err(BuildError::DuplicatePrecondition {
+                node: id,
+                name: name.to_string(),
+                attribute: kind.attribute(),
+            });
+        }
+        let fail = |expr: &str, source: ExprError| BuildError::Precondition {
+            node: id,
+            name: name.to_string(),
+            attribute: kind.attribute(),
+            expr: expr.to_string(),
+            source,
+        };
+        let (compiled, text) = match guard {
+            PendingGuard::Text(text) => {
+                let expr = Expr::parse(text).map_err(|e| fail(text, e))?;
+                let c = expr.compile(bb).map_err(|e| fail(text, e))?;
+                (Guard(c), text.as_str().into())
+            }
+            PendingGuard::Expr(expr) => {
+                let c = expr.compile(bb).map_err(|e| fail(expr.source(), e))?;
+                (Guard(c), expr.source().into())
+            }
+        };
+        out.set(*kind, compiled, text);
+    }
+    Ok(Some(Box::new(out)))
 }
 
 /// Resolve one node's ports, in manifest order.

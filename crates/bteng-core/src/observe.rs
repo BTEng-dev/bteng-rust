@@ -7,6 +7,7 @@
 
 use crate::clock::Nanos;
 use crate::id::{NodeId, Uid};
+use crate::precondition::Precondition;
 use crate::status::NodeState;
 
 /// Something that wants the scheduler to stop waiting.
@@ -40,6 +41,9 @@ pub struct NodeEvent {
     pub to: NodeState,
     pub at: Nanos,
     pub tick: u64,
+    /// The precondition that decided this transition without ticking the
+    /// node, or `None` for an ordinary tick or a halt.
+    pub by: Option<Precondition>,
 }
 
 /// Where tick events go.

@@ -17,6 +17,7 @@ use crate::id::NodeId;
 use crate::manifest::{Arity, NodeManifest};
 use crate::observe::{NodeEvent, TraceSink};
 use crate::port::{PortError, PortValue};
+use crate::precondition::Precondition;
 use crate::status::{NodeState, Status};
 use crate::tree::TreeGraph;
 
@@ -330,10 +331,30 @@ impl NodeKind {
 
 /// Tick one node.
 ///
-/// The whole dance is: lift the behaviour out of the arena, run it against a
-/// cursor that owns the arena for the duration, put it back, record the state.
-/// Allocation-free, and the borrow checker proves the node cannot reach itself.
+/// The whole dance is: check the node's preconditions, lift the behaviour out
+/// of the arena, run it against a cursor that owns the arena for the duration,
+/// put it back, record the state. Allocation-free, and the borrow checker
+/// proves the node cannot reach itself.
+///
+/// A precondition that decides (see [`crate::Precondition`]) skips `tick()`
+/// entirely; its result is recorded and traced exactly like a ticked one, with
+/// [`NodeEvent::by`] naming the precondition. `_while` turning false under a
+/// `Running` node halts it first.
 pub fn tick_node(graph: &mut TreeGraph, id: NodeId, ctx: &mut Ctx<'_>) -> Status {
+    let was = graph.state(id);
+    if let Some((status, by)) = graph
+        .preconditions(id)
+        .and_then(|p| p.check(was.is_running(), ctx))
+    {
+        // Only `_while` is checked under a running node, so this is the
+        // "halt it, then report Skipped" path.
+        if was.is_running() {
+            halt_node(graph, id, ctx);
+        }
+        record(graph, id, ctx, status.into(), Some(by));
+        return status;
+    }
+
     let mut kind = graph.take_behavior(id);
 
     let status = match &mut kind {
@@ -367,7 +388,35 @@ pub fn tick_node(graph: &mut TreeGraph, id: NodeId, ctx: &mut Ctx<'_>) -> Status
 
     graph.put_behavior(id, kind);
 
-    let to: NodeState = status.into();
+    // `Skipped` means "a precondition stopped me". A leaf has no precondition
+    // of its own to report and no child to pass one up from, so a leaf
+    // returning it is a bug in the leaf — the same contract violation as an
+    // invalid status in Python BTEng. Loud in debug; in release it becomes the
+    // `Failure` the cycle guard above also falls back to.
+    let status = if status.is_skipped() && graph.child_count(id) == 0 {
+        debug_assert!(
+            false,
+            "leaf {id:?} ({}) returned Skipped from tick(); only preconditions \
+             and control nodes may produce it",
+            graph.manifest(id).type_name
+        );
+        Status::Failure
+    } else {
+        status
+    };
+
+    record(graph, id, ctx, status.into(), None);
+    status
+}
+
+/// Store a node's new state, telling the trace sink if it changed.
+fn record(
+    graph: &mut TreeGraph,
+    id: NodeId,
+    ctx: &mut Ctx<'_>,
+    to: NodeState,
+    by: Option<Precondition>,
+) {
     if let Some(sink) = ctx.trace.as_deref_mut() {
         let from = graph.state(id);
         if from != to {
@@ -378,11 +427,11 @@ pub fn tick_node(graph: &mut TreeGraph, id: NodeId, ctx: &mut Ctx<'_>) -> Status
                 to,
                 at: ctx.clock.now(),
                 tick: ctx.tick_index,
+                by,
             });
         }
     }
     graph.set_state(id, to);
-    status
 }
 
 /// Halt a node and its subtree, returning them to `Idle`.
@@ -427,6 +476,7 @@ pub fn halt_node(graph: &mut TreeGraph, id: NodeId, ctx: &mut Ctx<'_>) {
                 to: NodeState::Idle,
                 at: ctx.clock.now(),
                 tick: ctx.tick_index,
+                by: None,
             });
         }
     }

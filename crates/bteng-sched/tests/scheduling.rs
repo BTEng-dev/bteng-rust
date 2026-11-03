@@ -5,7 +5,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use bteng_core::{Blackboard, Builtin, Ctx, NodeState, Status, Tree, TreeBuilder};
+use bteng_core::{Blackboard, Builtin, Ctx, NodeState, Precondition, Status, Tree, TreeBuilder};
 use bteng_sched::{
     OverrunPolicy, Pacer, RunOutcome, SchedError, Scheduler, StepOutcome, VirtualTime,
 };
@@ -369,6 +369,60 @@ fn a_guard_closing_stops_the_scheduler_ticking_the_region() {
         after_halt,
         "a halted branch must not keep running behind the tree's back"
     );
+}
+
+#[test]
+fn a_skipped_region_boundary_is_not_ticked_by_the_scheduler() {
+    let _g = begin_test();
+    // `_skipIf` on the Region itself: the parent's tick decides Skipped, and
+    // the scheduler must treat that like a halted branch — not run the subtree
+    // behind the tree's back.
+    let mut bb = Blackboard::new();
+    bb.declare("skip", true).unwrap();
+    let mut b = TreeBuilder::new();
+    b.begin("root", Builtin::parallel())
+        .begin("fast", Builtin::region())
+        .port("hz", "100.0")
+        .precondition(Precondition::SkipIf, "skip")
+        .leaf("fast_work", Builtin::action(run1))
+        .end()
+        .leaf("slow_work", Builtin::action(run0))
+        .end();
+    let graph = b.build(&mut bb).unwrap();
+    let mut sched = Scheduler::new(Tree::new(graph), &bb, 10.0).unwrap();
+    let pacer = VirtualTime::new();
+
+    let _ = sched.run_for(&mut bb, &pacer, 500 * MS, 0);
+    assert_eq!(count(1), 0, "a skipped region's subtree must not run");
+    assert!(count(0) > 0, "its sibling runs as usual");
+    let boundary = sched.boundary(1).unwrap();
+    assert_eq!(sched.tree().graph().state(boundary), NodeState::Skipped);
+}
+
+#[test]
+fn a_region_whose_subtree_is_skipped_publishes_skipped() {
+    let _g = begin_test();
+    // The precondition is on the region's entry, which the scheduler ticks.
+    // The verdict it publishes is Skipped, and the parent Sequence passes over
+    // it to the next child.
+    let mut bb = Blackboard::new();
+    bb.declare("skip", true).unwrap();
+    let mut b = TreeBuilder::new();
+    b.begin("root", Builtin::sequence())
+        .begin("r", Builtin::region())
+        .port("hz", "100.0")
+        .leaf("w", Builtin::action(ok1))
+        .precondition(Precondition::SkipIf, "skip")
+        .end()
+        .leaf("hold", Builtin::action(run0))
+        .end();
+    let graph = b.build(&mut bb).unwrap();
+    let mut sched = Scheduler::new(Tree::new(graph), &bb, 10.0).unwrap();
+    let pacer = VirtualTime::new();
+
+    let _ = sched.run_for(&mut bb, &pacer, 500 * MS, 0);
+    assert_eq!(count(1), 0, "the entry was skipped, never ticked");
+    assert!(count(0) > 0, "the parent passed over the skipped region");
 }
 
 #[test]

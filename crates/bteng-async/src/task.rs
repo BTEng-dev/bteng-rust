@@ -91,8 +91,10 @@ impl TaskSlot {
             Outcome::Settled(Status::Success) => SUCCESS,
             Outcome::Settled(Status::Failure) => FAILURE,
             // A worker that returns `Running` has not finished anything; treat it
-            // as a failure rather than letting the node poll forever.
-            Outcome::Settled(Status::Running) => FAILURE,
+            // as a failure rather than letting the node poll forever. `Skipped`
+            // is the same: only a precondition may produce it, and a worker is
+            // not one — reporting it would let a leaf claim it never ran.
+            Outcome::Settled(Status::Running | Status::Skipped) => FAILURE,
             Outcome::Cancelled => CANCELLED,
             Outcome::Panicked => PANICKED,
         };

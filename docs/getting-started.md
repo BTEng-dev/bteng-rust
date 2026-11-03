@@ -75,8 +75,19 @@ Against a registry of your own nodes:
 Port values are parsed and type-checked when the document loads, not when the tree runs. A
 misspelled port name or a `speed="quite fast"` is a load error, with the node and port named.
 
+Any node can carry BT.CPP v4 preconditions. When one decides, the node is not ticked:
+
+```xml
+<Charge _skipIf="battery &gt;= 80" _while="!estop"/>
+```
+
+A skipped node returns `Skipped`, and control nodes pass over it. Expressions are type-checked
+against the blackboard at build time, so a key that does not exist is a build error naming it.
+See [Preconditions](preconditions.md).
+
 ## Next
 
+- [Preconditions and `Skipped`](preconditions.md)
 - [Multi-rate ticking](multi-rate.md)
 - [Live reconfiguration](live-reconfiguration.md)
 - [Crates](crates.md)

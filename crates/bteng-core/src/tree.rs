@@ -1,10 +1,12 @@
 //! The arena.
 //!
-//! Six parallel vectors indexed by [`NodeId`], split by access pattern rather
+//! Seven parallel vectors indexed by [`NodeId`], split by access pattern rather
 //! than by what "belongs together" conceptually:
 //!
-//! * **hot** — [`NodeStruct`] (child and port ranges), `behavior`, `state`.
-//!   Touched on every node visit.
+//! * **hot** — [`NodeStruct`] (child and port ranges), `behavior`, `state`,
+//!   `guards`. Touched on every node visit. `guards` is one pointer per node,
+//!   `None` for a node without preconditions, so a tree that uses none pays one
+//!   predictable branch per visit.
 //! * **cold** — [`NodeMeta`] (uid, name, parent, manifest). Touched by
 //!   validation, telemetry and diagnostics, never by a tick.
 //!
@@ -23,6 +25,7 @@ use crate::id::{NameId, NodeId, SlotId, Uid};
 use crate::manifest::NodeManifest;
 use crate::node::NodeKind;
 use crate::port::Binding;
+use crate::precondition::Preconditions;
 use crate::status::{NodeState, Status};
 
 /// A node's ranges into the flat child and port arrays. 12 bytes.
@@ -56,6 +59,8 @@ pub struct TreeGraph {
     ports: Vec<Binding>,
     behavior: Vec<NodeKind>,
     state: Vec<NodeState>,
+    /// Preconditions, boxed so a node without any costs one null pointer.
+    guards: Vec<Option<Box<Preconditions>>>,
     names: Vec<Box<str>>,
     version: crate::patch::TreeVersion,
 }
@@ -67,6 +72,7 @@ impl TreeGraph {
         children: Vec<NodeId>,
         ports: Vec<Binding>,
         behavior: Vec<NodeKind>,
+        guards: Vec<Option<Box<Preconditions>>>,
         names: Vec<Box<str>>,
     ) -> Self {
         let state = alloc::vec![NodeState::Idle; structure.len()];
@@ -77,6 +83,7 @@ impl TreeGraph {
             ports,
             behavior,
             state,
+            guards,
             names,
             version: crate::patch::TreeVersion(0),
         }
@@ -91,6 +98,7 @@ impl TreeGraph {
         ports: Vec<Binding>,
         behavior: Vec<NodeKind>,
         state: Vec<NodeState>,
+        guards: Vec<Option<Box<Preconditions>>>,
         names: Vec<Box<str>>,
         version: crate::patch::TreeVersion,
     ) -> Self {
@@ -101,6 +109,7 @@ impl TreeGraph {
             ports,
             behavior,
             state,
+            guards,
             names,
             version,
         }
@@ -117,6 +126,7 @@ impl TreeGraph {
         Vec<Binding>,
         Vec<NodeKind>,
         Vec<NodeState>,
+        Vec<Option<Box<Preconditions>>>,
         Vec<Box<str>>,
     ) {
         (
@@ -126,6 +136,7 @@ impl TreeGraph {
             self.ports,
             self.behavior,
             self.state,
+            self.guards,
             self.names,
         )
     }
@@ -160,6 +171,12 @@ impl TreeGraph {
 
     pub(crate) fn set_state(&mut self, id: NodeId, s: NodeState) {
         self.state[id.index()] = s;
+    }
+
+    /// The preconditions on a node, if it has any.
+    #[must_use]
+    pub fn preconditions(&self, id: NodeId) -> Option<&Preconditions> {
+        self.guards[id.index()].as_deref()
     }
 
     #[must_use]

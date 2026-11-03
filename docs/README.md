@@ -20,6 +20,7 @@ Clean-room: concepts come from the Python BTEng and BehaviorTree.CPP, no code do
 
 | Topic | Page |
 |-------|------|
+| `_skipIf`, `_while`, `_successIf`, `_failureIf`; the `Skipped` status | [Preconditions](preconditions.md) |
 | Subtrees on their own clocks, wake on change | [Multi-rate ticking](multi-rate.md) |
 | Swap a subtree while a sibling is mid-run | [Live reconfiguration](live-reconfiguration.md) |
 | Throughput, allocation gate, jitter, targets | [Performance](performance.md) |

@@ -6,7 +6,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-green)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.1.0-green)](Cargo.toml)
 
 **A behavior tree engine for robotics and tick-driven control, written in Rust.**
 
@@ -51,7 +51,10 @@ assert_eq!(tree.tick(&mut ctx), Status::Success);
 ```
 
 Trees can also be loaded from BehaviorTree.CPP-style XML. Port values are checked when the
-document loads, not when the tree runs.
+document loads, not when the tree runs. BT.CPP v4's preconditions are supported too: `_skipIf`,
+`_while`, `_successIf` and `_failureIf`, along with the `Skipped` status they produce. Their
+expressions are type-checked against the blackboard at build time
+([details](docs/preconditions.md)).
 
 ---
 
@@ -62,6 +65,7 @@ Everything else lives in [`docs/`](docs/README.md):
 | Topic | Page |
 |-------|------|
 | Install, run, first tree in Rust and XML | [Getting started](docs/getting-started.md) |
+| `_skipIf`, `_while`, the `Skipped` status, expression language | [Preconditions](docs/preconditions.md) |
 | Regions, deadlines, event-driven wake-ups | [Multi-rate ticking](docs/multi-rate.md) |
 | Swap subtrees while running | [Live reconfiguration](docs/live-reconfiguration.md) |
 | Benchmarks and targets | [Performance](docs/performance.md) |
@@ -72,7 +76,8 @@ Everything else lives in [`docs/`](docs/README.md):
 
 ## Status
 
-**`v1.0.0`** — all seven planned milestones are in. Known limits: there is
+**`v1.1.0`** — all seven planned milestones are in, plus BT.CPP v4 preconditions and the
+`Skipped` status. Known limits: there is
 **no ARM hardware run**, **no `loom` tests**, and **nothing has driven a physical machine** yet.
 Every timing figure is x86-only. Details in [Status](docs/status.md).
 

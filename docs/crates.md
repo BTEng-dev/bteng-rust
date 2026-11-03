@@ -23,3 +23,12 @@ must keep compiling untouched.
 `run_end`, `patch` or `dropped`. The schema version is bumped whenever a consumer of the JSON would
 have to change, so a consumer should refuse a version it does not know. Port bindings are included
 from schema 3: a `key` for a blackboard binding, a `value` for a literal.
+
+Schema **4** adds the `Skipped` status:
+
+- `"skipped"` as a node state and a status;
+- `"by"` on a `node` event that a precondition decided without ticking the node (`"_skipIf"`,
+  `"_while"`, ...);
+- `"pre"` on a node in the structure table, mapping each precondition attribute to its expression.
+
+All are omitted when absent. See [Preconditions](preconditions.md#telemetry).

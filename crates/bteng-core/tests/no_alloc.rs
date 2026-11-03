@@ -12,7 +12,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::cell::Cell;
 use std::alloc::System;
 
-use bteng_core::{Blackboard, Builtin, Ctx, SimClock, Status, TreeBuilder};
+use bteng_core::{Blackboard, Builtin, Ctx, Precondition, SimClock, Status, TreeBuilder};
 
 thread_local! {
     static ALLOCS: Cell<u64> = const { Cell::new(0) };
@@ -144,4 +144,54 @@ fn halt_allocates_nothing() {
         }
     });
     assert_eq!(allocs, 0, "halt/tick cycle allocated {allocs} times");
+}
+
+/// Preconditions are evaluated on the tick path, so they are held to the same
+/// rule: the expression is compiled at build, and evaluating it — slot reads,
+/// arithmetic, string comparison, short-circuit logic — allocates nothing.
+/// Covers a node that keeps running under `_while`, and one that `_while`
+/// alternately skips and lets run — so the halt-then-skip path runs too.
+#[test]
+fn evaluating_preconditions_allocates_nothing() {
+    let mut bb = Blackboard::new();
+    let battery = bb.declare("battery", 80i32).unwrap();
+    bb.declare("state", String::from("UNDOCKED")).unwrap();
+    bb.declare("ready", true).unwrap();
+
+    let mut b = TreeBuilder::new();
+    b.begin("root", Builtin::parallel())
+        .leaf("work", Builtin::action(running_leaf))
+        .precondition(
+            Precondition::While,
+            "ready && (battery * 2 - 10) % 7 >= 0 && state != 'DOCKED'",
+        )
+        .leaf("charge", Builtin::action(running_leaf))
+        .precondition(Precondition::SkipIf, "not ready || state == 'DOCKED'")
+        .precondition(Precondition::While, "battery < 20")
+        .leaf("never", Builtin::action(ok_leaf))
+        .precondition(Precondition::FailureIf, "true")
+        .end()
+        .port("failure_count", "-1");
+    let graph = b.build(&mut bb).expect("tree builds");
+    let mut tree = bteng_core::Tree::new(graph);
+
+    let clock = SimClock::new();
+    let mut ctx = Ctx::new(&mut bb, &clock);
+    for _ in 0..8 {
+        tree.tick(&mut ctx);
+    }
+
+    let (_, allocs) = count_allocs(|| {
+        for i in 0..1000 {
+            // Flip `charge` between skipped (halted if it was running) and
+            // running every 100 ticks.
+            let level = if (i / 100) % 2 == 0 { 80 } else { 10 };
+            ctx.bb.set(battery, level).unwrap();
+            assert_eq!(tree.tick(&mut ctx), Status::Running);
+        }
+    });
+    assert_eq!(
+        allocs, 0,
+        "precondition evaluation allocated {allocs} times"
+    );
 }

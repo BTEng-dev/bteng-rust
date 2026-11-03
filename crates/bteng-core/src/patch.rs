@@ -44,6 +44,7 @@ use crate::id::{NameId, NodeId, Uid};
 use crate::manifest::NodeManifest;
 use crate::node::NodeKind;
 use crate::port::Binding;
+use crate::precondition::Preconditions;
 use crate::status::NodeState;
 use crate::tree::{NodeMeta, NodeStruct, TreeGraph};
 
@@ -405,12 +406,13 @@ struct Scratch {
     ports: Vec<Binding>,
     behavior: Vec<NodeKind>,
     state: Vec<NodeState>,
+    guards: Vec<Option<Box<Preconditions>>>,
     names: Vec<Box<str>>,
 }
 
 impl Scratch {
     fn of(graph: TreeGraph) -> Self {
-        let (structure, meta, children, ports, behavior, state, names) = graph.into_parts();
+        let (structure, meta, children, ports, behavior, state, guards, names) = graph.into_parts();
         Self {
             structure,
             meta,
@@ -418,12 +420,18 @@ impl Scratch {
             ports,
             behavior,
             state,
+            guards,
             names,
         }
     }
 
     fn take_behavior(&mut self, id: NodeId) -> NodeKind {
         core::mem::replace(&mut self.behavior[id.index()], NodeKind::Vacant)
+    }
+
+    /// Preconditions move with their node, like its behaviour and state.
+    fn take_guards(&mut self, id: NodeId) -> Option<Box<Preconditions>> {
+        self.guards[id.index()].take()
     }
 
     fn children_of(&self, id: NodeId) -> &[NodeId] {
@@ -451,6 +459,7 @@ struct Emit {
     ports: Vec<Binding>,
     behavior: Vec<NodeKind>,
     state: Vec<NodeState>,
+    guards: Vec<Option<Box<Preconditions>>>,
     names: Vec<Box<str>>,
     next_uid: u64,
     version: TreeVersion,
@@ -470,6 +479,7 @@ impl Emit {
             ports: Vec::new(),
             behavior: Vec::new(),
             state: Vec::new(),
+            guards: Vec::new(),
             names: Vec::new(),
             next_uid,
             version,
@@ -514,6 +524,7 @@ impl Emit {
             self.ports,
             self.behavior,
             self.state,
+            self.guards,
             self.names,
             self.version,
         )
@@ -545,12 +556,14 @@ fn emit(
     });
     out.behavior.push(NodeKind::Vacant);
     out.state.push(NodeState::Idle);
+    out.guards.push(None);
 
     let name = old.name_of(id).to_string();
     let name_id = out.intern(&name);
     out.meta[me.index()].name = name_id;
     out.behavior[me.index()] = old.take_behavior(id);
     out.state[me.index()] = old.state[id.index()];
+    out.guards[me.index()] = old.take_guards(id);
 
     let first_port = out.ports.len() as u32;
     let bindings: Vec<Binding> = old.bindings_of(id).to_vec();
@@ -616,12 +629,14 @@ fn emit_incoming(out: &mut Emit, sub: &mut Scratch, id: NodeId, parent: NodeId) 
     });
     out.behavior.push(NodeKind::Vacant);
     out.state.push(NodeState::Idle);
+    out.guards.push(None);
 
     let name = sub.name_of(id).to_string();
     let name_id = out.intern(&name);
     out.meta[me.index()].name = name_id;
     out.behavior[me.index()] = sub.take_behavior(id);
     out.state[me.index()] = sub.state[id.index()];
+    out.guards[me.index()] = sub.take_guards(id);
 
     let first_port = out.ports.len() as u32;
     let bindings: Vec<Binding> = sub.bindings_of(id).to_vec();
@@ -667,12 +682,14 @@ fn extract_into(out: &mut Emit, old: &mut Scratch, id: NodeId, parent: NodeId) -
     });
     out.behavior.push(NodeKind::Vacant);
     out.state.push(NodeState::Idle);
+    out.guards.push(None);
 
     let name = old.name_of(id).to_string();
     let name_id = out.intern(&name);
     out.meta[me.index()].name = name_id;
     out.behavior[me.index()] = old.take_behavior(id);
     out.state[me.index()] = old.state[id.index()];
+    out.guards[me.index()] = old.take_guards(id);
 
     let first_port = out.ports.len() as u32;
     let bindings: Vec<Binding> = old.bindings_of(id).to_vec();

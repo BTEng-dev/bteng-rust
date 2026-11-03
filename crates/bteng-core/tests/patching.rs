@@ -547,3 +547,46 @@ fn a_patch_cannot_nest_a_tree_past_the_limit() {
         bteng_core::PatchError::TooDeep { .. }
     ));
 }
+
+#[test]
+fn preconditions_move_with_their_nodes_through_a_patch() {
+    use bteng_core::Precondition;
+
+    let _g = begin_test();
+    let mut bb = Blackboard::new();
+    bb.declare("skip", true).unwrap();
+    let mut b = TreeBuilder::new();
+    b.begin("root", Builtin::sequence())
+        .leaf("guarded", Builtin::action(run0))
+        .precondition(Precondition::SkipIf, "skip")
+        .leaf("plain", Builtin::action(run1))
+        .end();
+    let graph = b.build(&mut bb).unwrap();
+
+    // The incoming node brings a precondition of its own.
+    let mut sub = TreeBuilder::new();
+    sub.leaf("new", Builtin::action(ok2))
+        .precondition(Precondition::SkipIf, "skip");
+    let incoming = sub.build(&mut bb).unwrap();
+
+    let parent = graph.uid(NodeId::ROOT);
+    let plan = TreePatch::InsertChild { parent, index: 0 }
+        .validate(&graph, Some(&incoming))
+        .unwrap();
+    let mut w = World {
+        graph: apply(graph, Some(incoming), plan).graph,
+        bb,
+        clock: SimClock::new(),
+    };
+
+    // new (skipped), guarded (skipped), plain (running).
+    assert_eq!(w.tick(), Status::Running);
+    assert_eq!((count(0), count(1), count(2)), (0, 1, 0));
+    let g = &w.graph;
+    let names: Vec<_> = g
+        .ids()
+        .filter(|id| g.preconditions(*id).is_some())
+        .map(|id| g.name(id).to_string())
+        .collect();
+    assert_eq!(names, ["new", "guarded"]);
+}

@@ -36,11 +36,34 @@
 //!
 //! The built tree therefore contains no port names and no scopes at all — only
 //! slot indices.
+//!
+//! # Preconditions
+//!
+//! `_failureIf`, `_successIf`, `_skipIf` and `_while` are read on any node
+//! element, `<SubTree>` included, as in BT.CPP v4:
+//!
+//! ```xml
+//! <Dock _skipIf="battery < 20 || state == 'DOCKED'"/>
+//! ```
+//!
+//! The expression is parsed here, so a syntax error or a forbidden construct
+//! (a call, `.`, `[]`, `=`) fails the load. Its names go through the same key
+//! rewriting as `{key}` ports, so inside a subtree `count` and `{count}` mean
+//! the same key; a precondition on the `<SubTree>` element itself is read in
+//! the *calling* tree's namespace. Names are then resolved and type-checked at
+//! build, where an unknown key is an error naming it. See `bteng_core::Expr`.
+//!
+//! Any other attribute starting with `_` — BT.CPP's postconditions
+//! (`_onSuccess`, `_post`, ...) or a typo such as `_skipif` — is rejected
+//! rather than silently becoming a port.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use bteng_core::{Blackboard, BuildError, NodeRegistry, TreeBuilder, TreeGraph};
+use bteng_core::{
+    Blackboard, BuildError, Expr, ExprError, NameSub, NodeRegistry, Precondition, TreeBuilder,
+    TreeGraph,
+};
 
 /// Root element names accepted. `root` is BT.CPP; `BTEng` is the Python engine.
 const ROOT_TAGS: &[&str] = &["root", "BTEng"];
@@ -48,7 +71,8 @@ const ROOT_TAGS: &[&str] = &["root", "BTEng"];
 const TREE_TAGS: &[&str] = &["BehaviorTree", "Tree"];
 /// Elements that are metadata, not trees.
 const NON_TREE_TAGS: &[&str] = &["TreeNodesModel", "include"];
-/// Attributes on a node element that are not ports.
+/// Attributes on a node element that are not ports. The four preconditions are
+/// handled separately; any other `_`-prefixed attribute is an error.
 const RESERVED_ATTRS: &[&str] = &["ID", "name", "_autoremap", "_description", "_uid"];
 /// Category tags whose real node type comes from the `ID` attribute (BT.CPP v3
 /// and Python BTEng style).
@@ -82,6 +106,22 @@ pub enum XmlError {
     /// Subtree inlining nested past [`MAX_SUBTREE_DEPTH`], or a tree that
     /// includes itself.
     SubTreeCycle { path: Vec<String> },
+    /// An attribute starting with `_` that is neither reserved nor one of the
+    /// four preconditions — a postcondition, or a misspelt precondition.
+    UnknownSpecialAttribute {
+        tree: String,
+        node: String,
+        attribute: String,
+    },
+    /// A precondition expression that does not parse, or uses a construct the
+    /// language does not have.
+    BadPrecondition {
+        tree: String,
+        node: String,
+        attribute: &'static str,
+        expr: String,
+        source: ExprError,
+    },
     /// The tree parsed but did not survive validation.
     Build(BuildError),
 }
@@ -125,6 +165,26 @@ impl fmt::Display for XmlError {
             XmlError::SubTreeCycle { path } => {
                 write!(f, "subtree nesting looks cyclic: {}", path.join(" -> "))
             }
+            XmlError::UnknownSpecialAttribute {
+                tree,
+                node,
+                attribute,
+            } => write!(
+                f,
+                "tree {tree:?}, node {node:?}: attribute {attribute:?} is not supported \
+                 (the only `_` attributes are _failureIf, _successIf, _skipIf, _while, \
+                 _autoremap, _description and _uid)"
+            ),
+            XmlError::BadPrecondition {
+                tree,
+                node,
+                attribute,
+                expr,
+                source,
+            } => write!(
+                f,
+                "tree {tree:?}, node {node:?}: {attribute}=\"{expr}\": {source}"
+            ),
             XmlError::Build(e) => write!(f, "{e}"),
         }
     }
@@ -167,6 +227,16 @@ impl Scope {
             return Mapped::Key(key.to_string());
         }
         Mapped::Key(format!("{}/{}", self.prefix, key))
+    }
+
+    /// Rewrite an expression's names the way `{key}` ports are rewritten.
+    fn rename_expr(&self, expr: &mut Expr) {
+        expr.rename(|name| {
+            Some(match self.resolve_key(name) {
+                Mapped::Key(k) => NameSub::Key(k),
+                Mapped::Literal(lit) => NameSub::Literal(lit),
+            })
+        });
     }
 
     fn rewrite_value(&self, value: &str) -> String {
@@ -345,7 +415,7 @@ impl<'doc, 'input> Emit<'_, 'doc, 'input> {
             self.builder
                 .begin_kind(instance_name, reg.manifest, (reg.ctor)());
         }
-        apply_ports(el, scope, self.builder);
+        apply_attributes(el, scope, self.builder, tree_id, instance_name)?;
 
         for child in children.iter().copied() {
             self.node(child, scope, tree_id)?;
@@ -383,7 +453,10 @@ impl<'doc, 'input> Emit<'_, 'doc, 'input> {
             prefix: format!("{id}#{}", self.instances),
             remap: el
                 .attributes()
-                .filter(|a| !RESERVED_ATTRS.contains(&a.name()))
+                .filter(|a| {
+                    !RESERVED_ATTRS.contains(&a.name())
+                        && Precondition::from_attribute(a.name()).is_none()
+                })
                 .map(|a| {
                     // The right-hand side is written in the *parent's* scope, so
                     // it resolves there before being stored.
@@ -406,6 +479,16 @@ impl<'doc, 'input> Emit<'_, 'doc, 'input> {
             .expect("SubTree is a built-in and is always registered");
         self.builder
             .begin_kind(instance_name, marker.manifest, (marker.ctor)());
+        // Preconditions on the `<SubTree>` element guard the marker node and
+        // read the *calling* tree's keys, so they rename through `scope`, not
+        // `inner`. Everything else on the element is a remap, applied above.
+        for attr in el.attributes() {
+            if let Some(kind) = precondition_attr(attr, tree_id, instance_name)? {
+                let mut expr = parse_precondition(kind, attr.value(), tree_id, instance_name)?;
+                scope.rename_expr(&mut expr);
+                self.builder.precondition_expr(kind, expr);
+            }
+        }
 
         let root_node = single_node_child(self.trees[id], id)?;
         self.stack.push(id.to_string());
@@ -417,14 +500,60 @@ impl<'doc, 'input> Emit<'_, 'doc, 'input> {
     }
 }
 
-/// Port attributes, rewritten through the scope.
-fn apply_ports(el: roxmltree::Node<'_, '_>, scope: &Scope, builder: &mut TreeBuilder) {
+/// Port and precondition attributes, rewritten through the scope.
+fn apply_attributes(
+    el: roxmltree::Node<'_, '_>,
+    scope: &Scope,
+    builder: &mut TreeBuilder,
+    tree_id: &str,
+    node: &str,
+) -> Result<(), XmlError> {
     for attr in el.attributes() {
-        if RESERVED_ATTRS.contains(&attr.name()) {
-            continue;
+        if let Some(kind) = precondition_attr(attr, tree_id, node)? {
+            let mut expr = parse_precondition(kind, attr.value(), tree_id, node)?;
+            scope.rename_expr(&mut expr);
+            builder.precondition_expr(kind, expr);
+        } else if !RESERVED_ATTRS.contains(&attr.name()) {
+            builder.port(attr.name(), &scope.rewrite_value(attr.value()));
         }
-        builder.port(attr.name(), &scope.rewrite_value(attr.value()));
     }
+    Ok(())
+}
+
+/// Classify a `_`-prefixed attribute: a precondition, reserved (`None`), or an
+/// error. Attributes without the prefix are `None` too.
+fn precondition_attr(
+    attr: roxmltree::Attribute<'_, '_>,
+    tree_id: &str,
+    node: &str,
+) -> Result<Option<Precondition>, XmlError> {
+    let name = attr.name();
+    if let Some(kind) = Precondition::from_attribute(name) {
+        return Ok(Some(kind));
+    }
+    if name.starts_with('_') && !RESERVED_ATTRS.contains(&name) {
+        return Err(XmlError::UnknownSpecialAttribute {
+            tree: tree_id.to_string(),
+            node: node.to_string(),
+            attribute: name.to_string(),
+        });
+    }
+    Ok(None)
+}
+
+fn parse_precondition(
+    kind: Precondition,
+    text: &str,
+    tree_id: &str,
+    node: &str,
+) -> Result<Expr, XmlError> {
+    Expr::parse(text).map_err(|source| XmlError::BadPrecondition {
+        tree: tree_id.to_string(),
+        node: node.to_string(),
+        attribute: kind.attribute(),
+        expr: text.to_string(),
+        source,
+    })
 }
 
 /// The node type an element names.

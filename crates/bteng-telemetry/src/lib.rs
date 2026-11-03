@@ -38,12 +38,18 @@ pub use timeline::Timeline;
 
 /// Bumped when a consumer of the JSON would have to change.
 ///
+/// * **4** — node states and statuses may be `"skipped"`. A `node` event may carry
+///   `by` (`"_failureIf"`, `"_successIf"`, `"_skipIf"` or `"_while"`) when a
+///   precondition decided the transition without ticking the node, and a node in
+///   the structure table may carry `pre`, an object from precondition attribute to
+///   its expression text. Every field is additive and omitted when absent, but a
+///   consumer that switches on state names meets a value it has not seen.
 /// * **3** — a port may carry `key` (the blackboard key a `key` binding names) and
 ///   `value` (the text of a `literal` or `default` binding). Additive, but a consumer
 ///   that wants to show ports has to read them.
 /// * **2** — added `patch`, emitted when a tree changes shape at runtime.
 /// * **1** — initial.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// Render a slice of events as JSON Lines — one object per line.
 ///

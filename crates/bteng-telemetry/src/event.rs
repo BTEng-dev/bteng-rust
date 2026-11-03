@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use bteng_core::{Blackboard, Nanos, NodeState, Status, TreeGraph};
+use bteng_core::{Blackboard, Nanos, NodeState, Precondition, Status, TreeGraph};
 
 /// One port binding, as a viewer needs to show it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +34,9 @@ pub struct NodeInfo {
     pub category: &'static str,
     pub children: Vec<u32>,
     pub ports: Vec<PortInfo>,
+    /// Preconditions as written, in evaluation order: `("_skipIf", "battery < 20")`.
+    /// Empty for most nodes, and then omitted from the JSON.
+    pub preconditions: Vec<(&'static str, String)>,
 }
 
 /// The whole tree, once, at the head of a trace.
@@ -62,6 +65,14 @@ impl Structure {
                     type_name: manifest.type_name,
                     category: manifest.category.xml_tag(),
                     children: graph.children_of(id).iter().map(|c| c.0).collect(),
+                    preconditions: graph
+                        .preconditions(id)
+                        .map(|p| {
+                            p.iter()
+                                .map(|(k, text)| (k.attribute(), text.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
                     ports: manifest
                         .ports
                         .iter()
@@ -122,6 +133,9 @@ pub enum Event {
         node: u32,
         from: NodeState,
         to: NodeState,
+        /// The precondition that decided this transition without ticking the
+        /// node. `None` for an ordinary tick or a halt.
+        by: Option<Precondition>,
     },
     /// A region's subtree was ticked.
     Region {
@@ -169,13 +183,18 @@ impl Event {
                 node,
                 from,
                 to,
+                by,
             } => {
                 let _ = write!(
                     out,
-                    r#"{{"t":"node","at":{at},"tick":{tick},"uid":{uid},"node":{node},"from":"{}","to":"{}"}}"#,
+                    r#"{{"t":"node","at":{at},"tick":{tick},"uid":{uid},"node":{node},"from":"{}","to":"{}""#,
                     state_name(*from),
                     state_name(*to)
                 );
+                if let Some(p) = by {
+                    let _ = write!(out, r#","by":"{}""#, p.attribute());
+                }
+                out.push('}');
             }
             Event::Region {
                 at,
@@ -258,7 +277,20 @@ fn write_node(out: &mut String, n: &NodeInfo) {
         }
         out.push('}');
     }
-    out.push_str("]}");
+    out.push(']');
+    if !n.preconditions.is_empty() {
+        out.push_str(r#","pre":{"#);
+        for (i, (attr, text)) in n.preconditions.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            escape_json(out, attr);
+            out.push(':');
+            escape_json(out, text);
+        }
+        out.push('}');
+    }
+    out.push('}');
 }
 
 const fn state_name(s: NodeState) -> &'static str {
@@ -267,6 +299,7 @@ const fn state_name(s: NodeState) -> &'static str {
         NodeState::Running => "running",
         NodeState::Success => "success",
         NodeState::Failure => "failure",
+        NodeState::Skipped => "skipped",
     }
 }
 
@@ -275,6 +308,7 @@ const fn status_name(s: Status) -> &'static str {
         Status::Running => "running",
         Status::Success => "success",
         Status::Failure => "failure",
+        Status::Skipped => "skipped",
     }
 }
 

@@ -1,22 +1,33 @@
 //! Decorator tick logic.
+//!
+//! Every decorator passes `Skipped` through: a child that did not run has no
+//! outcome to force, invert, repeat or retry. A decorator that keeps progress
+//! (`Repeat`, `RetryUntilSuccessful`, `Timeout`, `Delay`) treats a skipped child
+//! as the end of its activation and clears that progress, exactly as it does on
+//! `Success`/`Failure` — a skipped node is not `Running`, so `halt()` would
+//! never get the chance to clear it later.
 
 use super::{msec_to_nanos, now_of, ports};
 use crate::clock::Nanos;
 use crate::node::Cursor;
 use crate::status::Status;
 
-/// `ForceSuccess`/`ForceFailure`: a fixed status unless the child is running.
+/// `ForceSuccess`/`ForceFailure`: a fixed status for a child that completed.
+///
+/// `Running` and `Skipped` pass through, as in BT.CPP: forcing a skipped child
+/// would make up an outcome for work that never ran.
 pub(super) fn force(cur: &mut Cursor<'_, '_>, forced: Status) -> Status {
     match cur.tick_child(0) {
-        Status::Running => Status::Running,
-        _ => forced,
+        s @ (Status::Running | Status::Skipped) => s,
+        Status::Success | Status::Failure => forced,
     }
 }
 
 pub(super) fn keep_running(cur: &mut Cursor<'_, '_>) -> Status {
     match cur.tick_child(0) {
         Status::Failure => Status::Failure,
-        _ => Status::Running,
+        Status::Skipped => Status::Skipped,
+        Status::Running | Status::Success => Status::Running,
     }
 }
 
@@ -41,6 +52,14 @@ pub(super) fn repeat(completed: &mut u32, cur: &mut Cursor<'_, '_>) -> Status {
         Status::Failure => {
             *completed = 0;
             Status::Failure
+        }
+        Status::Skipped => {
+            // BT.CPP keeps its counter here; this engine cannot, because a
+            // skipped Repeat is not Running and so is never `halt()`ed — a kept
+            // counter would leak into the next activation.
+            *completed = 0;
+            cur.halt_child(0);
+            Status::Skipped
         }
         Status::Success => {
             *completed += 1;
@@ -69,6 +88,11 @@ pub(super) fn retry(failures: &mut u32, cur: &mut Cursor<'_, '_>) -> Status {
             *failures = 0;
             Status::Success
         }
+        Status::Skipped => {
+            *failures = 0;
+            cur.halt_child(0);
+            Status::Skipped
+        }
         Status::Failure => {
             *failures += 1;
             cur.halt_child(0);
@@ -82,21 +106,23 @@ pub(super) fn retry(failures: &mut u32, cur: &mut Cursor<'_, '_>) -> Status {
     }
 }
 
-/// Run the child to completion once, then replay the cached status.
+/// Run the child to completion once; afterwards, never tick it again.
 ///
-/// With `then_skip="false"` the child runs again instead. BT.CPP returns
-/// `SKIPPED` in that case; this engine has no such status, and inventing one
-/// that every control node would have to interpret is not worth it for one node.
+/// After the one run, as in BT.CPP: `then_skip="true"` (the default) returns
+/// `Skipped`, so a parent passes over the spent node; `then_skip="false"`
+/// replays the status the child completed with. Only `Success`/`Failure` count
+/// as the one run — a child that was itself skipped has not run yet.
 pub(super) fn run_once(done: &mut bool, cached: &mut Status, cur: &mut Cursor<'_, '_>) -> Status {
     if *done {
-        if cur.get_or::<bool>(ports::RUN_ONCE_THEN_SKIP, true) {
-            return *cached;
-        }
-        *done = false;
+        return if cur.get_or::<bool>(ports::RUN_ONCE_THEN_SKIP, true) {
+            Status::Skipped
+        } else {
+            *cached
+        };
     }
 
     let status = cur.tick_child(0);
-    if status.is_settled() {
+    if status.is_completed() {
         *done = true;
         *cached = status;
     }

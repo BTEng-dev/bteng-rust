@@ -4,14 +4,14 @@ version = 4
 
 [[package]]
 name = "bteng-async"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "bteng-core",
 ]
 
 [[package]]
 name = "bteng-bench"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "bteng-async",
  "bteng-core",
@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "bteng-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "bteng-core",
  "bteng-sched",
@@ -30,18 +30,18 @@ dependencies = [
 
 [[package]]
 name = "bteng-core"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "bteng-sched"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "bteng-core",
 ]
 
 [[package]]
 name = "bteng-telemetry"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "bteng-core",
  "bteng-sched",
@@ -49,7 +49,7 @@ dependencies = [
 
 [[package]]
 name = "bteng-xml"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "bteng-core",
  "roxmltree",

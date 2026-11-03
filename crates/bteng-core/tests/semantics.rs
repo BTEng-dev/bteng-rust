@@ -475,7 +475,7 @@ fn keep_running_until_failure() {
 }
 
 #[test]
-fn run_once_replays_its_cached_status() {
+fn run_once_skips_after_its_one_run() {
     let _guard = begin_test();
     let mut h = Harness::build(|b| {
         b.begin("once", Builtin::run_once())
@@ -483,15 +483,34 @@ fn run_once_replays_its_cached_status() {
             .end();
     });
 
+    // BT.CPP semantics: the one run reports the child's status; after that the
+    // default `then_skip="true"` reports Skipped.
+    assert_eq!(h.tick(), Status::Success);
     for _ in 0..3 {
-        assert_eq!(h.tick(), Status::Success);
+        assert_eq!(h.tick(), Status::Skipped);
     }
     assert_eq!(count(1), 1, "RunOnce must run the child exactly once");
 
     // A halt must not reset it — "once" would mean nothing if it did.
     h.halt();
-    assert_eq!(h.tick(), Status::Success);
+    assert_eq!(h.tick(), Status::Skipped);
     assert_eq!(count(1), 1);
+}
+
+#[test]
+fn run_once_without_then_skip_replays_its_cached_status() {
+    let _guard = begin_test();
+    let mut h = Harness::build(|b| {
+        b.begin("once", Builtin::run_once())
+            .leaf("child", Builtin::action(fail1))
+            .end()
+            .port("then_skip", "false");
+    });
+
+    for _ in 0..3 {
+        assert_eq!(h.tick(), Status::Failure);
+    }
+    assert_eq!(count(1), 1, "RunOnce must run the child exactly once");
 }
 
 #[test]

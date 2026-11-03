@@ -6,14 +6,23 @@
 //! keeps `<Parallel>` deterministic, replayable, and portable to and from other
 //! BT tooling.
 //!
-//! Two deliberate deviations, both documented at their node:
+//! Deliberate deviations, each documented at its node:
 //!
 //! * `Repeat` and `RetryUntilSuccessful` complete **at most one child cycle per
 //!   tick**. BT.CPP loops inside a single tick, which makes the cost of one tick
 //!   depend on how fast the child settles — unbounded work in a tick is exactly
 //!   what DR-4 keeps off the table.
-//! * `RunOnce` has no `Skipped` status to return, so `then_skip="false"` re-runs
-//!   the child instead.
+//! * `Parallel` takes skipped children out of the child count before applying
+//!   its thresholds, whatever the thresholds are; BT.CPP's answer depends on
+//!   whether a threshold was given explicitly.
+//! * `Repeat`/`RetryUntilSuccessful` reset their counter when the child is
+//!   skipped (BT.CPP keeps it).
+//! * A skipped condition makes `IfThenElse`/`WhileDoElse` return `Skipped`;
+//!   BT.CPP leaves that case undefined.
+//!
+//! `Skipped` propagation — every control node passes over a skipped child and
+//! is itself skipped only when all of its children were; every decorator passes
+//! it through — is described in `control.rs` and `decorator.rs`.
 //!
 //! Reactive control nodes are here and behave exactly as BT.CPP specifies:
 //! re-tick every child from the first, every tick. What M4 adds is the
@@ -65,7 +74,7 @@ static RETRY_PORTS: &[PortSpec] = &[input::<i32>("num_attempts")
 
 static RUN_ONCE_PORTS: &[PortSpec] = &[input::<bool>("then_skip")
     .with_default("true")
-    .described("after the first run, return the cached status instead of re-running")];
+    .described("after the first run: true returns Skipped, false replays the child's status")];
 
 static TIMEOUT_PORTS: &[PortSpec] =
     &[input::<u64>("msec").described("fail if the child is still running after this long")];
@@ -195,7 +204,7 @@ manifest!(
     Decorator,
     Arity::One,
     NO_PORTS,
-    "Swaps Success and Failure; passes Running through."
+    "Swaps Success and Failure; passes Running and Skipped through."
 );
 manifest!(
     M_FORCE_SUCCESS,
@@ -203,7 +212,7 @@ manifest!(
     Decorator,
     Arity::One,
     NO_PORTS,
-    "Success unless the child is Running."
+    "Success unless the child is Running or Skipped."
 );
 manifest!(
     M_FORCE_FAILURE,
@@ -211,7 +220,7 @@ manifest!(
     Decorator,
     Arity::One,
     NO_PORTS,
-    "Failure unless the child is Running."
+    "Failure unless the child is Running or Skipped."
 );
 manifest!(
     M_KEEP_RUNNING,
@@ -243,7 +252,7 @@ manifest!(
     Decorator,
     Arity::One,
     RUN_ONCE_PORTS,
-    "Runs the child to completion once, then replays the cached status."
+    "Runs the child to completion once. Afterwards Skipped, or the cached status if then_skip is false."
 );
 manifest!(
     M_TIMEOUT,

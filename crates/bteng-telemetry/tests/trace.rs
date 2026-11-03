@@ -292,7 +292,7 @@ fn a_defaulted_port_reports_the_default_text() {
 
 #[test]
 fn the_schema_version_names_the_port_fields() {
-    assert_eq!(SCHEMA_VERSION, 3);
+    const { assert!(SCHEMA_VERSION >= 3, "port fields arrived in schema 3") };
     let (_, json) = ports_of(|b| {
         b.leaf("nap", Builtin::sleep()).port("msec", "1");
     });
@@ -309,4 +309,79 @@ fn every_port_line_is_valid_json_with_awkward_text() {
         b.leaf("nap", Builtin::sleep()).port("msec", "{a\"b\\c}");
     });
     assert!(json.contains(r#""key":"a\"b\\c""#), "{json}");
+}
+
+// ── schema 4: skipped, `by`, `pre` ───────────────────────────────────────────
+
+#[test]
+fn a_skipped_node_reaches_the_trace_with_its_precondition() {
+    use bteng_core::Precondition;
+
+    let mut bb = Blackboard::new();
+    bb.declare("battery", 10i32).unwrap();
+    let mut b = TreeBuilder::new();
+    b.begin("root", Builtin::sequence())
+        .leaf("dock", Builtin::AlwaysSuccess)
+        .precondition(Precondition::SkipIf, "battery < 20 && \"q\" != 'x'")
+        .leaf("ok", Builtin::AlwaysSuccess)
+        .end();
+    let graph = b.build(&mut bb).unwrap();
+    let mut tree = Tree::new(graph);
+
+    let mut rec = Recorder::with_capacity(64);
+    rec.structure(tree.graph(), &bb);
+    let clock = SimClock::new();
+    {
+        let mut ctx = Ctx::new(&mut bb, &clock).with_trace(&mut rec);
+        assert_eq!(tree.tick(&mut ctx), Status::Success);
+    }
+    let events = rec.finish();
+
+    let Event::Structure(s) = &events[0] else {
+        panic!("structure first")
+    };
+    let dock = s.nodes.iter().find(|n| n.name == "dock").unwrap();
+    assert_eq!(
+        dock.preconditions,
+        vec![("_skipIf", "battery < 20 && \"q\" != 'x'".to_string())]
+    );
+    assert!(
+        s.nodes
+            .iter()
+            .find(|n| n.name == "ok")
+            .unwrap()
+            .preconditions
+            .is_empty()
+    );
+
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::Node {
+            to: NodeState::Skipped,
+            by: Some(Precondition::SkipIf),
+            ..
+        }
+    )));
+
+    let json = to_jsonl(&events);
+    for line in json.lines() {
+        assert!(line.starts_with('{') && line.ends_with('}'), "{line}");
+    }
+    assert!(
+        json.contains(r#""pre":{"_skipIf":"battery < 20 && \"q\" != 'x'"}"#),
+        "{json}"
+    );
+    assert!(
+        json.contains(r#""from":"idle","to":"skipped","by":"_skipIf"}"#),
+        "{json}"
+    );
+    // An ordinary transition carries no `by`, and a node without
+    // preconditions no `pre`: additive fields are absent, not null.
+    assert!(json.contains(r#""to":"success"}"#), "{json}");
+    assert!(!json.contains("null"));
+}
+
+#[test]
+fn schema_4_is_the_skipped_schema() {
+    assert_eq!(SCHEMA_VERSION, 4);
 }

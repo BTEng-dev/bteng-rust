@@ -42,12 +42,14 @@ mod blackboard;
 mod builder;
 mod builtins;
 mod clock;
+mod expr;
 mod id;
 mod manifest;
 mod node;
 mod observe;
 mod patch;
 mod port;
+mod precondition;
 mod registry;
 mod status;
 mod tree;
@@ -61,6 +63,9 @@ pub use builtins::{
 #[cfg(feature = "std")]
 pub use clock::SteadyClock;
 pub use clock::{Clock, Nanos, SimClock};
+pub use expr::{
+    Compiled, Expr, ExprError, MAX_DEPTH as MAX_EXPR_DEPTH, MAX_NODES as MAX_EXPR_NODES, NameSub,
+};
 pub use id::{NameId, NodeId, SlotId, Uid};
 pub use manifest::{Arity, NodeCategory, NodeManifest};
 pub use node::{
@@ -72,6 +77,7 @@ pub use port::{
     Binding, BindingSource, ParseError, PortDirection, PortError, PortSpec, PortValue, inout,
     input, output,
 };
+pub use precondition::{Precondition, Preconditions};
 pub use registry::{NodeCtor, NodeRegistry, Registration, RegistryError};
 pub use status::{NodeState, Status};
 pub use tree::{NodeMeta, NodeStruct, TreeGraph};

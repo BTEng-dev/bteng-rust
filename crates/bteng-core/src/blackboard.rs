@@ -204,6 +204,13 @@ impl Blackboard {
             .ok_or(BbError::TypeMismatch(id))
     }
 
+    /// The type a slot holds. Build time and tooling only — what lets a
+    /// precondition expression check its operands before the first tick.
+    #[must_use]
+    pub fn slot_type(&self, id: SlotId) -> Option<TypeId> {
+        self.slots.get(id.index()).map(|s| s.type_id)
+    }
+
     /// Current version of a slot. Bumped on every write.
     #[must_use]
     pub fn version(&self, id: SlotId) -> Option<u64> {

@@ -1,12 +1,12 @@
 # Status
 
-**`v1.0.0`.** All seven planned milestones (M0–M7) are in. The engine ticks a full
-BehaviorTree.CPP-compatible node set with typed ports bound at build time, loads BT.CPP-shaped XML,
-runs subtrees at independent rates or on data changes, drives async work without blocking the tick
-thread, records a versioned trace, and swaps subtrees live without disturbing what is running beside
+**`v1.1.0`.** All seven planned milestones (M0–M7) are in. The engine ticks a full
+BehaviorTree.CPP-compatible node set with typed ports bound at build time, loads BT.CPP-shaped XML
+with v4 preconditions and the `Skipped` status ([Preconditions](preconditions.md)), runs subtrees
+at independent rates or on data changes, drives async work without blocking the tick thread, records a versioned trace, and swaps subtrees live without disturbing what is running beside
 them.
 
-Three things are not established, and `1.0.0` does not claim them.
+Three things are not established, and `1.1.0` does not claim them.
 
 ## Not established
 
@@ -21,6 +21,9 @@ Three things are not established, and `1.0.0` does not claim them.
 ## Other gaps
 
 - Regions are single-threaded, deliberately.
+- From BT.CPP v4: no postconditions (`_onSuccess`, `_onFailure`, `_onHalted`, `_post`) and no
+  `Script` node. Both need assignment in the expression language. The XML loader rejects the
+  postcondition attributes rather than ignoring them.
 - One structural operation per patch.
 - The Python control plane (`crates/bteng-py`) is parked on a branch and not covered by CI.
 

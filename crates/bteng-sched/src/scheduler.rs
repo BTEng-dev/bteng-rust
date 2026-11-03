@@ -512,8 +512,9 @@ impl Scheduler {
         };
         let g = self.tree.graph();
         // Idle means an ancestor halted this branch; the scheduler must not keep
-        // it alive behind the tree's back.
-        if g.state(node) == NodeState::Idle {
+        // it alive behind the tree's back. Skipped means a precondition on the
+        // boundary stopped it this tick — its subtree must not run either.
+        if matches!(g.state(node), NodeState::Idle | NodeState::Skipped) {
             return false;
         }
         // A published verdict waits to be read, not overwritten.

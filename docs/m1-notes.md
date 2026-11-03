@@ -64,6 +64,13 @@ Both are documented at the node and both are DR-4 consequences.
    than reporting BT.CPP's `SKIPPED`. Adding a fourth status that every control node would have to
    interpret is not worth it for one node.
 
+> [!NOTE]
+> **Superseded.** `Skipped` now exists, added together with BT.CPP's preconditions; see
+> [Preconditions](preconditions.md). `RunOnce` follows BT.CPP: after its one run,
+> `then_skip="true"` (the default) returns `Skipped` and `then_skip="false"` replays the cached
+> status. This note also had the BT.CPP mapping inverted: BT.CPP returns `SKIPPED` for `true`, not
+> `false`.
+
 ## Correcting an M0 note
 
 M0's `builtins.rs` said the reactive control nodes were deferred because they would mean shipping
@@ -82,5 +89,7 @@ optimisation, not the wrong semantics.
 - The `SubTree` marker adds one node per instance. Free at tick time (`SubTree` is a passthrough),
   but it does count against `Parallel`'s child budget if someone nests oddly.
 - No `Script`/`Precondition` node: BT.CPP's version needs an expression language. Out of scope until
-  there is a reason.
+  there is a reason. *(Since then, the four precondition attributes have arrived with a small
+  read-only expression language; see [Preconditions](preconditions.md). `Script` still has not:
+  it needs assignment.)*
 - Still no aarch64 hardware. CI compiles and runs the suite under QEMU; timing numbers wait for M2.
